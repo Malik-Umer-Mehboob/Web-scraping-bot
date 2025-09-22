@@ -1,0 +1,49 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+:root {
+  --background: #FFFFFF;
+  --foreground: #1F2937; /* gray-800 */
+  --gradient-start: #A5B4FC; /* indigo-300 */
+  --gradient-middle: #C4B5FD; /* violet-300 */
+  --primary: #3B82F6; /* blue-500 */
+  --primary-foreground: #FFFFFF;
+  --secondary: #F3F4F6; /* gray-100 */
+  --secondary-foreground: #1F2937; /* gray-800 */
+  --accent: #10B981; /* green-500 */
+  --accent-foreground: #FFFFFF;
+  --card: #FFFFFF;
+  --card-foreground: #1F2937; /* gray-800 */
+  --border: #E5E7EB; /* gray-200 */
+  --input: #E5E7EB; /* gray-200 */
+  --ring: #3B82F6; /* blue-500 */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #111827; /* gray-900 */
+    --foreground: #F9FAFB; /* gray-50 */
+    --gradient-start: #1E293B; /* slate-800 */
+    --gradient-middle: #3730A3; /* indigo-900 */
+    --primary: #60A5FA; /* blue-400 */
+    --primary-foreground: #111827; /* gray-900 */
+    --secondary: #1F2937; /* gray-800 */
+    --secondary-foreground: #F9FAFB; /* gray-50 */
+    --accent: #34D399; /* green-400 */
+    --accent-foreground: #111827; /* gray-900 */
+    --card: #1F2937; /* gray-800 */
+    --card-foreground: #F9FAFB; /* gray-50 */
+    --border: #374151; /* gray-700 */
+    --input: #374151; /* gray-700 */
+    --ring: #60A5FA; /* blue-400 */
+  }
+}
+
+body {
+  background: linear-gradient(to bottom, var(--gradient-start), var(--gradient-middle), var(--background));
+  color: var(--foreground);
+  font-family: 'Inter', sans-serif;
+  min-height: 100vh;
+}
+
+
