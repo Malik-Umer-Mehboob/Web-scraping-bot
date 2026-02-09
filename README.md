@@ -1,19 +1,21 @@
 
 
-# 🌐 Web Scraping Project  
+# 🌐 Web Scraping Project
 
-This project is a **Next.js + Tailwind CSS + Playwright** based web scraping tool that allows users to scrape website data with multiple modes of interaction. It provides authentication, DOM scraping, filtering, and element selection with an option to export results in **CSV format**.  
+This project is a **Next.js + Tailwind CSS + Playwright** based web scraping tool that allows users to extract website data through multiple interactive modes.  
+It includes authentication, DOM scraping, filtering, element selection, and CSV export functionality.
+.  
 
 ---
 
  🚀 Features  
 
-✅ **Authentication** – Secure Sign Up, Sign In, and Logout functionality.  
-✅ **DOM Scraping** – Enter a website URL, and the full DOM elements are scraped and displayed.  
-✅ **Selector Helper Mode** – Apply filters to scraped data for refined results.  
-✅ **Mouse Mode** – Open a website and manually select any element by clicking/hovering.  
-✅ **CSV Export** – Download all scraped or filtered data in CSV format.  
-✅ **Responsive UI** – Built with **Next.js** and **Tailwind CSS** for modern and clean design.  
+  **Authentication** – Secure Sign Up, Sign In, and Logout functionality.  
+- **DOM Scraping** – Enter a website URL, scrape the full DOM, and display all elements.  
+- **Selector Helper Mode** – Apply filters on scraped data for refined extraction.  
+- **Mouse Mode** – Open a website interactively and manually select elements by clicking or hovering.  
+- **CSV Export** – Download scraped or filtered data as a CSV file.  
+- **Responsive UI** – Modern and clean design using Next.js and Tailwind CSS.  
 
 ---
 
@@ -53,34 +55,36 @@ This project is a **Next.js + Tailwind CSS + Playwright** based web scraping too
 ---
 
 📖 Usage
+🔑 Authentication
 
- 🔑 Authentication
+Sign Up to create an account.
 
-* Create an account (Sign Up).
-* Log in to access scraping tools.
-* Logout anytime from the Navbar.
+Sign In to access the scraping tools.
 
- 🕸️ DOM Scraping (Home Page)
+Logout anytime from the Navbar.
 
-* Enter a website URL.
-* The full DOM elements are scraped and shown.
+🕸️ DOM Scraping
 
- 🎯 Selector Helper
+Enter a website URL.
 
-* Navigate to **Selector Helper Mode**.
-* Apply filters to extract specific elements.
+Scraper fetches all DOM elements and displays them.
 
- 🖱️ Mouse Mode
+🎯 Selector Helper
 
-* Enter a website URL.
-* Website opens in interactive mode.
-* Hover or click on elements → they are highlighted & selected.
-* Selected elements appear in the dashboard.
+Navigate to Selector Helper Mode.
 
- 📑 Export Data
+Apply filters to extract specific elements from the scraped data.
 
-* All scraped/filtered/selected data can be exported as a **CSV file**.
+🖱️ Mouse Mode
 
+Enter a website URL.
 
+Website opens in interactive mode.
 
+Hover or click elements → they get highlighted & selected.
 
+Selected elements appear on the dashboard.
+
+📑 Export Data
+
+All scraped, filtered, or selected data can be exported as a CSV file.
