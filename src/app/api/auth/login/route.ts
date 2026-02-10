@@ -5,14 +5,20 @@ import { z } from 'zod';
 
 const loginSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(1)
+  password: z.string().min(8) // Updated to min 8
 });
 
 export async function POST(request: Request) {
   await dbConnect();
   try {
     const body = await request.json();
-    const { email, password } = loginSchema.parse(body);
+    const result = loginSchema.safeParse(body);
+
+    if (!result.success) {
+      return NextResponse.json({ message: 'Validation failed', errors: result.error.flatten() }, { status: 400 });
+    }
+
+    const { email, password } = result.data;
 
     const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
     if (!user) return NextResponse.json({ message: 'Invalid credentials' }, { status: 401 });

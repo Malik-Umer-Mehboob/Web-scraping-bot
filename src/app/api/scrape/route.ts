@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { chromium } from "playwright";
-import { load } from "cheerio";
+
 import { autoScroll } from "../../../utils/autoScroll";
 
 export async function POST(req: NextRequest) {
@@ -16,80 +16,124 @@ export async function POST(req: NextRequest) {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/116 Safari/537.36",
     });
     const page = await context.newPage();
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
-
-    // 🔹 isBlocked check hata diya (403 issue avoid karne ke liye)
+    
+    // Allow more time for heavy pages
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 90000 });
 
     await autoScroll(page);
 
-    const content = await page.content();
-    await browser.close();
+    // Evaluate in browser context to check visibility and computed styles
+    const scrapedData = await page.evaluate(() => {
+      const ignoredTags = new Set([
+        "SCRIPT", "STYLE", "NOSCRIPT", "IFRAME", "SVG", "CANVAS", 
+        "META", "LINK", "HEAD", "NAV", "FOOTER", "HEADER", "BUTTON", "INPUT", "SELECT", "TEXTAREA"
+      ]);
 
-    const $ = load(content);
+      const ignoredKeywords = new Set([
+        "LOGIN", "SIGNUP", "SIGN IN", "REGISTER", "CART", "CHECKOUT", "MENU", 
+        "SHOP MEN", "SHOP WOMEN", "ACCOUNT", "PROFILE", "WISHLIST", "SEARCH"
+      ]);
 
-    const ignoredTags = new Set([
-      "script",
-      "style",
-      "meta",
-      "noscript",
-      "head",
-      "svg",
-      "canvas",
-    ]);
+      const createUniqueSet = new Set<string>();
+      const structuredData: Record<string, string[]> = {};
 
-    const dataByTag: Record<string, string[]> = {};
-
-    $("body *").each((_, el) => {
-      const tag = el.tagName.toLowerCase();
-      if (ignoredTags.has(tag)) return;
-
-      let value = "";
-      if (["link"].includes(tag)) {
-        value = $(el).attr("href") || "";
-      } else if (["iframe", "img", "video", "audio", "source"].includes(tag)) {
-        value = $(el).attr("src") || "";
-      } else {
-        value = $(el)
-          .contents()
-          .filter((_, node) => node.type === "text")
-          .text()
-          .trim()
-          .replace(/\s+/g, " ");
+      // Prioritize main content containers
+      const selectors = ["main", "#content", ".product-grid", ".product-card", ".review", "article", "body"];
+      let rootElement = document.body;
+      
+      for (const sel of selectors) {
+        const el = document.querySelector(sel);
+        if (el) {
+          rootElement = el as HTMLElement;
+          break;
+        }
       }
 
-      if (!value) return;
+      function traverse(node: Node) {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const element = node as HTMLElement;
+          const tagName = element.tagName;
 
-      if (!dataByTag[tag]) dataByTag[tag] = [];
-      dataByTag[tag].push(value);
+          if (ignoredTags.has(tagName)) return;
+
+          // Check visibility
+          const style = window.getComputedStyle(element);
+          if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return;
+
+          // Handle specific tags with attributes
+          if (tagName === 'IMG') {
+             const src = (element as HTMLImageElement).src;
+             if (src && !createUniqueSet.has(src)) {
+                createUniqueSet.add(src);
+                if (!structuredData['img']) structuredData['img'] = [];
+                structuredData['img'].push(src);
+             }
+             return;
+          }
+           if (tagName === 'A') {
+             const href = (element as HTMLAnchorElement).href;
+              if (href && !href.startsWith('javascript:') && !createUniqueSet.has(href)) {
+                createUniqueSet.add(href);
+                if (!structuredData['link']) structuredData['link'] = [];
+                structuredData['link'].push(href);
+             }
+          }
+        }
+
+        if (node.nodeType === Node.TEXT_NODE) {
+          const text = (node.textContent || "").trim();
+          
+          if (text.length >= 3 && !createUniqueSet.has(text)) {
+            const upperText = text.toUpperCase();
+            // Filter out navigation keywords
+            if (![...ignoredKeywords].some(keyword => upperText.includes(keyword))) {
+                 createUniqueSet.add(text);
+                 
+                 const parentTag = node.parentElement ? node.parentElement.tagName.toLowerCase() : 'text';
+                 if (!structuredData[parentTag]) structuredData[parentTag] = [];
+                 structuredData[parentTag].push(text);
+            }
+          }
+        }
+
+        // Recursively traverse children
+        node.childNodes.forEach(child => traverse(child));
+      }
+
+      traverse(rootElement);
+
+      return structuredData;
     });
 
-    // Build CSV multi-row
-    const tags = Object.keys(dataByTag);
-    const maxRows = Math.max(...Object.values(dataByTag).map((arr) => arr.length));
+    await browser.close();
 
-    // CSV headers
-    const headers: string[] = tags;
-    const csvRows: string[][] = [];
-    csvRows.push(headers);
+    // Flatten JSON for UI
+    const jsonForUI: string[] = [];
+    Object.values(scrapedData).forEach((arr) => jsonForUI.push(...arr));
 
-    // Build each row
+    // Simple CSV construction from flattened data (or structured if preferred)
+    // For now, let's just dump the flattened unique text to CSV for simplicity, 
+    // or keep the tag-based structure if the user wants column-based data.
+    // The previous implementation tried to align columns by tag which is often sparse.
+    // Let's stick to the previous format of tag columns.
+    
+    const tags = Object.keys(scrapedData);
+    const maxRows = Math.max(0, ...Object.values(scrapedData).map((arr) => arr.length));
+    
+    const headers = tags;
+    const csvRows = [headers];
+
     for (let i = 0; i < maxRows; i++) {
-      const row: string[] = [];
-      tags.forEach((tag) => {
-        row.push(dataByTag[tag][i] || "");
-      });
-      csvRows.push(row);
+        const row = tags.map(tag => scrapedData[tag][i] || "");
+        csvRows.push(row);
     }
-
+    
     const csv = csvRows
       .map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(","))
       .join("\n");
 
-    // Flatten JSON for UI
-    const jsonForUI: string[] = [];
-    Object.values(dataByTag).forEach((arr) => jsonForUI.push(...arr));
+    return NextResponse.json({ jsonByTag: scrapedData, jsonForUI, csv });
 
-    return NextResponse.json({ jsonByTag: dataByTag, jsonForUI, csv });
   } catch (err: unknown) {
     console.error("Scraping Error:", err);
     let detail = "Unknown error";

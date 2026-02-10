@@ -4,28 +4,25 @@ import User from '@/models/User';
 import { z } from 'zod';
 
 const registerSchema = z.object({
-  username: z.string().min(3).max(20).regex(/^[a-zA-Z0-9_]+$/),
+  username: z.string().min(3).max(20), // Removed regex
   email: z.string().email().min(1).max(255),
-  password: z.string().min(8).max(100),
-  name: z.string().max(50).optional(),
+  password: z.string().min(8), // Removed max length and complexity check
+  name: z.string().optional(), // Simplified
   agreeToTerms: z.boolean().refine(val => val === true)
 });
-
-function validatePasswordComplexity(password: string) {
-  const errors: string[] = [];
-  if (password.length < 8) errors.push('Password must be at least 8 characters');
-  if (!/[a-z]/.test(password)) errors.push('At least one lowercase letter required');
-  if (!/[A-Z]/.test(password)) errors.push('At least one uppercase letter required');
-  if (!/[0-9]/.test(password)) errors.push('At least one number required');
-  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) errors.push('At least one special character required');
-  return { isValid: errors.length === 0, errors };
-}
 
 export async function POST(request: Request) {
   await dbConnect();
   try {
     const body = await request.json();
-    const { username, email, password, name } = registerSchema.parse(body);
+    const result = registerSchema.safeParse(body);
+
+    if (!result.success) {
+
+      return NextResponse.json({ message: 'Validation failed', errors: result.error.flatten() }, { status: 400 });
+    }
+
+    const { username, email, password, name } = result.data;
 
     const existingUser = await User.findOne({
       $or: [{ email: email.toLowerCase() }, { username: username.toLowerCase() }]
@@ -34,10 +31,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'User already exists' }, { status: 409 });
     }
 
-    const passwordCheck = validatePasswordComplexity(password);
-    if (!passwordCheck.isValid) {
-      return NextResponse.json({ message: 'Password complexity error', errors: passwordCheck.errors }, { status: 400 });
-    }
+    // Password complexity check removed as per requirements
 
     const newUser = new User({
       username: username.toLowerCase(),
