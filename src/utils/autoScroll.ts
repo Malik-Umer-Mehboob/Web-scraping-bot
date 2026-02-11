@@ -52,7 +52,13 @@ export async function autoScroll(
     }
 
     await page.evaluate("window.scrollTo(0, document.body.scrollHeight)");
-    await page.waitForTimeout(randomDelay());
+    
+    // Wait for network idle or timeout to ensure lazy content loads
+    try {
+        await page.waitForLoadState("networkidle", { timeout: 2000 }).catch(() => {});
+    } catch (e) {
+        // Ignore network idle timeouts
+    }
 
     const newHeight = await page.evaluate("document.body.scrollHeight");
     if (newHeight === lastHeight && !clickedButton) {

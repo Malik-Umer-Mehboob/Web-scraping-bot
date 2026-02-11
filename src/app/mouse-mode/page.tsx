@@ -15,51 +15,31 @@ export default function MouseModePage() {
   const [showNotification, setShowNotification] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [sessionActive, setSessionActive] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     if (showNotification) {
       const timer = setTimeout(() => {
         setShowNotification(false);
-      }, 3000);
+      }, 5000);
       return () => clearTimeout(timer);
     }
   }, [showNotification]);
-
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (sessionActive && sessionId) {
-      interval = setInterval(async () => {
-        try {
-          const res = await fetch(`/api/mouse-mode-update?sessionId=${sessionId}`);
-          if (res.ok) {
-            const { selectedElements } = await res.json();
-            setSelectedData(selectedElements);
-            if (selectedElements.length > 0) {
-              setShowResults(true);
-              setShowNotification(true);
-            }
-          }
-        } catch (err) {
-          console.error("Polling error:", err);
-        }
-      }, 500);
-    }
-    return () => clearInterval(interval);
-  }, [sessionActive, sessionId]);
 
   const handleMouseMode = async () => {
     if (!url) return alert("Please enter a URL to activate Mouse Mode");
     if (sessionActive) {
       return alert(
-        "Mouse Mode is already active. Select elements, press Enter to reset styles, and Escape to finalize."
+        "Mouse Mode is already active. Please finish the current session by pressing Enter in the browser."
       );
     }
 
     setLoading(true);
+    setSessionActive(true); 
     setError("");
+    setShowResults(false);
 
     try {
+      // The fetch call is now BLOCKING until the user presses Enter in the browser
       const res = await fetch("/api/mouse-mode", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -72,13 +52,14 @@ export default function MouseModePage() {
       }
 
       const result = await res.json();
-      setSelectedData(result.selectedElements);
-      setSessionId(result.sessionId);
-      setSessionActive(true); // ✅ ab sirf success pe active hoga
+      const elements = result.selectedElements || [];
+      setSelectedData(elements);
 
-      if (result.selectedElements.length > 0) {
+      if (elements.length > 0) {
         setShowResults(true);
         setShowNotification(true);
+      } else {
+        setError("No elements were selected.");
       }
     } catch (err) {
       console.error(err);
@@ -89,12 +70,12 @@ export default function MouseModePage() {
       }
     } finally {
       setLoading(false);
+      setSessionActive(false); // Session over
     }
   };
 
  function downloadCsv() {
   if (selectedData.length > 0) {
-    // ✅ convert to Record<string, unknown>
     const csv = jsonToCsv(
       selectedData.map((item) => ({
         tag: item.tag,
@@ -125,7 +106,7 @@ export default function MouseModePage() {
             </h1>
             <p className="text-center text-gray-600 mb-8 text-lg">
               Enter a URL, activate mouse mode, hover to highlight, click to select elements,
-              press Enter to reset styles, and Escape to finalize.
+              press <strong>Enter</strong> to save selections, or <strong>Escape</strong> to cancel.
             </p>
             <div className="relative flex flex-col sm:flex-row items-center gap-4">
               <input
@@ -133,16 +114,26 @@ export default function MouseModePage() {
                 placeholder="https://example.com"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                className="w-full pl-4 pr-4 py-4 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300"
+                disabled={sessionActive}
+                className="w-full pl-4 pr-4 py-4 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300 disabled:bg-gray-100"
               />
               <button
                 onClick={handleMouseMode}
                 disabled={loading || sessionActive}
-                className="w-full sm:w-auto bg-gradient-to-r from-green-500 to-teal-600 text-white px-8 py-4 rounded-xl hover:shadow-lg transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all duration-300"
+                className={`w-full sm:w-auto px-8 py-4 rounded-xl text-white font-semibold shadow-lg transform transition-all duration-300 ${
+                  sessionActive 
+                    ? "bg-gray-500 cursor-not-allowed" 
+                    : "bg-gradient-to-r from-green-500 to-teal-600 hover:-translate-y-1 hover:shadow-xl"
+                }`}
               >
-                {loading ? "Activating..." : sessionActive ? "Session Active" : "Activate Mouse Mode"}
+                {sessionActive ? "Session Active..." : "Activate Mouse Mode"}
               </button>
             </div>
+            {error && (
+              <div className="mt-4 p-4 bg-red-100 text-red-700 rounded-xl border border-red-200">
+                {error}
+              </div>
+            )}
           </div>
 
           {showResults && selectedData.length > 0 && (
@@ -151,12 +142,12 @@ export default function MouseModePage() {
                 <h2 className="text-3xl font-bold text-gray-800">Selected Data</h2>
                 <button
                   onClick={downloadCsv}
-                  className="bg-green-500 text-white px-6 py-3 rounded-xl hover:bg-green-600 transition-all duration-300"
+                  className="bg-green-500 text-white px-6 py-3 rounded-xl hover:bg-green-600 transition-all duration-300 shadow-md hover:shadow-lg"
                 >
                   Download CSV
                 </button>
               </div>
-              <ul className="list-disc pl-5 space-y-2">
+              <ul className="list-disc pl-5 space-y-2 max-h-96 overflow-y-auto">
                 {selectedData.map((item, idx) => (
                   <li key={idx} className="text-sm text-gray-700 break-words">
                     <span className="font-semibold text-blue-700">{`<${item.tag}>`}</span>: {item.text}
@@ -168,8 +159,8 @@ export default function MouseModePage() {
         </div>
       </main>
       {showNotification && (
-        <div className="fixed bottom-5 right-5 bg-green-500 text-white px-6 py-3 rounded-xl shadow-lg transition-all duration-300">
-          Data updated in UI! Press Enter to reset styles, Escape to finalize.
+        <div className="fixed bottom-5 right-5 bg-green-600 text-white px-6 py-4 rounded-xl shadow-2xl animate-fade-in-up z-50">
+           Session Completed! Data has been downloaded to the server and is available below.
         </div>
       )}
     </div>

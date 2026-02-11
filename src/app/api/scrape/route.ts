@@ -37,9 +37,18 @@ export async function POST(req: NextRequest) {
     const page = await context.newPage();
     
     // Allow more time for heavy pages
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 }); // Reduced timeout slightly to fit within 60s maxDuration if needed, but keeping high for safety
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 }); 
 
     await autoScroll(page);
+
+    try {
+      await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => console.log("Network idle timeout, proceeding..."));
+    } catch (e) {
+      // ignore
+    }
+
+    // Capture full DOM
+    const fullHtml = await page.content();
 
     // Evaluate in browser context to check visibility and computed styles
     const scrapedData = await page.evaluate(() => {
@@ -145,7 +154,12 @@ export async function POST(req: NextRequest) {
       .map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(","))
       .join("\n");
 
-    return NextResponse.json({ jsonByTag: scrapedData, jsonForUI, csv });
+    return NextResponse.json({ 
+        jsonByTag: scrapedData, 
+        jsonForUI, 
+        csv,
+        fullHtml // Return the full string DOM
+    });
 
   } catch (err: unknown) {
     console.error("Scraping Error:", err);
