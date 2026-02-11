@@ -2,6 +2,15 @@
   "functions": {
     "app/api/scrape/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/mouse-mode/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/scrape-login/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/selector/route.ts": {
+      "maxDuration": 60
     }
   }
 }

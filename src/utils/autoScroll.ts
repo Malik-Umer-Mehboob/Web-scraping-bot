@@ -1,4 +1,4 @@
-import type { Page } from "playwright";
+import type { Page } from "playwright-core";
 
 const COMMON_LOAD_MORE_SELECTORS = [
   'button:has-text("Load More")',

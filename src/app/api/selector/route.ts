@@ -3,7 +3,8 @@ import * as cheerio from "cheerio";
 import { z } from "zod";
 import Papa from "papaparse";
 import { autoScroll } from "../../../utils/autoScroll";
-import { chromium } from "playwright";
+import chromium from "@sparticuz/chromium";
+import { chromium as playwright } from "playwright-core";
 
 
 const bodySchema = z.object({
@@ -36,7 +37,19 @@ async function getHtmlWithFetch(url: string) {
 }
 
 async function getHtmlWithPlaywright(url: string) {
-  const browser = await chromium.launch({ headless: true });
+  let browser;
+  if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+    browser = await playwright.launch({
+      args: chromium.args,
+      executablePath: await chromium.executablePath(),
+      headless: true,
+    });
+  } else {
+    browser = await playwright.launch({
+      channel: 'chrome',
+      headless: true,
+    });
+  }
   try {
     const context = await browser.newContext();
     const page = await context.newPage();

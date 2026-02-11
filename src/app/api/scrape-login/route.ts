@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chromium } from "playwright";
+import chromium from "@sparticuz/chromium";
+import { chromium as playwright } from "playwright-core";
 import { load } from "cheerio";
 import { autoScroll } from "../../../utils/autoScroll";
 
@@ -10,7 +11,19 @@ export async function POST(req: NextRequest) {
     if (!targetUrl) return NextResponse.json({ error: "Target URL is required" }, { status: 400 });
     if (!cookies || !Array.isArray(cookies)) return NextResponse.json({ error: "Cookies must be an array" }, { status: 400 });
 
-    const browser = await chromium.launch({ headless: true });
+    let browser;
+    if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+      browser = await playwright.launch({
+        args: chromium.args,
+        executablePath: await chromium.executablePath(),
+        headless: true,
+      });
+    } else {
+      browser = await playwright.launch({
+        channel: 'chrome',
+        headless: true,
+      });
+    }
     const context = await browser.newContext();
 
     // Add cookies dynamically

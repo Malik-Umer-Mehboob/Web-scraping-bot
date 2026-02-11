@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chromium } from "playwright";
+import chromium from "@sparticuz/chromium";
+import { chromium as playwright } from "playwright-core";
 
 // In-memory store for session data (replace with Redis in production)
 const sessionData: { [sessionId: string]: { text: string; tag: string }[] } = {};
@@ -19,7 +20,7 @@ interface CustomWindow extends Window {
 }
 
 export async function POST(req: NextRequest) {
-  let browser: import("playwright").Browser | null = null;
+  let browser;
   try {
     const { url } = await req.json();
     if (!url) {
@@ -30,7 +31,18 @@ export async function POST(req: NextRequest) {
     const sessionId = Date.now().toString();
     console.log(`Attempting to launch browser and navigate to: ${validatedUrl}, sessionId: ${sessionId}`);
 
-    browser = await chromium.launch({ headless: false });
+    if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+      browser = await playwright.launch({
+        args: chromium.args,
+        executablePath: await chromium.executablePath(),
+        headless: true,
+      });
+    } else {
+      browser = await playwright.launch({
+        channel: 'chrome',
+        headless: true,
+      });
+    }
     const context = await browser.newContext();
     const page = await context.newPage();
 
