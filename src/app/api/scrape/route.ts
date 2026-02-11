@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chromium } from "playwright";
+import chromium from "@sparticuz/chromium";
+import { chromium as playwright } from "playwright-core";
 
 import { autoScroll } from "../../../utils/autoScroll";
 
@@ -10,7 +11,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "URL is required" }, { status: 400 });
     }
 
-    const browser = await chromium.launch({ headless: true });
+    let browser;
+    
+    // Check if running on Vercel or in production environment
+    if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+      // Configuration for Vercel / AWS Lambda
+      browser = await playwright.launch({
+        args: chromium.args,
+        executablePath: await chromium.executablePath(),
+        headless: true,
+      });
+    } else {
+      // Local development configuration
+      // Uses locally installed Chrome to avoid need for full playwright binary download
+      browser = await playwright.launch({
+        channel: 'chrome',
+        headless: true
+      });
+    }
+
     const context = await browser.newContext({
       userAgent:
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/116 Safari/537.36",
@@ -18,7 +37,7 @@ export async function POST(req: NextRequest) {
     const page = await context.newPage();
     
     // Allow more time for heavy pages
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 }); // Reduced timeout slightly to fit within 60s maxDuration if needed, but keeping high for safety
 
     await autoScroll(page);
 
@@ -72,7 +91,7 @@ export async function POST(req: NextRequest) {
           }
            if (tagName === 'A') {
              const href = (element as HTMLAnchorElement).href;
-              if (href && !href.startsWith('javascript:') && !createUniqueSet.has(href)) {
+               if (href && !href.startsWith('javascript:') && !createUniqueSet.has(href)) {
                 createUniqueSet.add(href);
                 if (!structuredData['link']) structuredData['link'] = [];
                 structuredData['link'].push(href);
@@ -111,12 +130,6 @@ export async function POST(req: NextRequest) {
     const jsonForUI: string[] = [];
     Object.values(scrapedData).forEach((arr) => jsonForUI.push(...arr));
 
-    // Simple CSV construction from flattened data (or structured if preferred)
-    // For now, let's just dump the flattened unique text to CSV for simplicity, 
-    // or keep the tag-based structure if the user wants column-based data.
-    // The previous implementation tried to align columns by tag which is often sparse.
-    // Let's stick to the previous format of tag columns.
-    
     const tags = Object.keys(scrapedData);
     const maxRows = Math.max(0, ...Object.values(scrapedData).map((arr) => arr.length));
     
