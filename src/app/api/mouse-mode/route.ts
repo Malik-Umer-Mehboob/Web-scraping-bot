@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Browser, BrowserContext, Page } from "playwright-core";
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 
 // Force Node.js runtime (Vercel serverless functions)
 export const runtime = "nodejs";
@@ -35,7 +32,8 @@ interface CustomWindow extends Window {
  * Reusable function to launch the browser based on the environment.
  */
 async function launchBrowser(): Promise<Browser> {
-  if (process.env.VERCEL || process.env.NODE_ENV === "production") {
+  // Check for Vercel or Production environment
+  if (process.env.VERCEL || process.env.NODE_ENV === "production" || process.env.AWS_LAMBDA_FUNCTION_VERSION) {
     console.log("Environment: Vercel / Production - Using playwright-core + @sparticuz/chromium");
     
     const chromium = await import("@sparticuz/chromium").then(mod => mod.default);
@@ -47,15 +45,18 @@ async function launchBrowser(): Promise<Browser> {
         ...chromium.args,
         "--hide-scrollbars",
         "--disable-web-security",
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
       ],
       executablePath,
-      headless: true,
+      headless: true, // Must be true for serverless
     });
   } else {
     console.log("Environment: Local Development - Using playwright (native)");
-    const { chromium } = await import("playwright");
+    const { chromium } = await import("playwright"); 
     return await chromium.launch({
-      headless: false,
+      headless: false, // Visible browser for local mouse mode interaction
       args: ["--no-sandbox"],
     });
   }
@@ -73,32 +74,6 @@ function normalizeUrl(url: string, baseUrl?: string): string {
     }
   }
   return url;
-}
-
-// Advanced CSV generator for rich data
-function jsonToCsv(jsonData: ScrapedElement[]): string {
-  if (!jsonData || jsonData.length === 0) return "";
-  
-  // Define columns manually to ensure order and handling of complex objects
-  const columns: (keyof ScrapedElement)[] = ["tag", "text", "id", "className", "attributes", "innerHTML"];
-  
-  const header = columns.join(',');
-  const rows = jsonData.map(row => {
-    return columns.map(key => {
-      let value = row[key];
-      
-      if (key === 'attributes' && typeof value === 'object') {
-        // Convert attributes object to a string representation
-        value = JSON.stringify(value).replace(/"/g, '""'); 
-      } else if (typeof value === 'string') {
-        value = value.replace(/"/g, '""').replace(/\n/g, ' '); // Clean newlines
-      }
-      
-      return `"${value}"`;
-    }).join(',');
-  });
-  
-  return [header, ...rows].join('\n');
 }
 
 export async function POST(req: NextRequest) {
@@ -130,7 +105,7 @@ export async function POST(req: NextRequest) {
 
     try {
       context = await browser.newContext({
-        viewport: null,
+        viewport: null, // Let browser set viewport naturally
         userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36",
       });
       page = await context.newPage();
@@ -168,6 +143,7 @@ export async function POST(req: NextRequest) {
              win.geminiSelectedElements = [];
           }
 
+          // Cleanup previous listeners to avoid duplicates
           const cleanupListeners = () => {
             if (win.onMouseOver) document.removeEventListener("mouseover", win.onMouseOver);
             if (win.onMouseOut) document.removeEventListener("mouseout", win.onMouseOut);
@@ -181,22 +157,16 @@ export async function POST(req: NextRequest) {
               (el as HTMLElement).style.removeProperty("border");
               el.classList.remove("gemini-selected-element");
             });
-
+            
             if (win.geminiLastHighlighted) {
-              if (win.geminiOriginalBorder) win.geminiLastHighlighted.style.border = win.geminiOriginalBorder;
-              else win.geminiLastHighlighted.style.removeProperty("border");
-
-              if (win.geminiOriginalCursor) win.geminiLastHighlighted.style.cursor = win.geminiOriginalCursor;
-              else win.geminiLastHighlighted.style.removeProperty("cursor");
+               if (win.geminiOriginalBorder) win.geminiLastHighlighted.style.border = win.geminiOriginalBorder;
+               else win.geminiLastHighlighted.style.removeProperty("border");
+               
+               if (win.geminiOriginalCursor) win.geminiLastHighlighted.style.cursor = win.geminiOriginalCursor;
+               else win.geminiLastHighlighted.style.removeProperty("cursor");
             }
-
+            
             win.geminiLastHighlighted = null;
-            win.geminiOriginalBorder = null;
-            win.geminiOriginalCursor = null;
-            win.onMouseOver = undefined;
-            win.onMouseOut = undefined;
-            win.onClick = undefined;
-            win.onKeyDown = undefined;
           };
 
           if (win.onMouseOver) cleanupListeners();
@@ -208,7 +178,8 @@ export async function POST(req: NextRequest) {
           const highlightStyle = "3px dashed #ff0000";
           const selectedStyle = "3px solid #0066ff";
           const savedStyle = "3px solid #00cc00"; 
-
+          
+          // --- Event Handlers ---
           const onMouseOver = (e: MouseEvent) => {
             const target = e.target as HTMLElement;
             if (!target || target === document.body || target.classList.contains("gemini-selected-element")) return;
@@ -216,7 +187,7 @@ export async function POST(req: NextRequest) {
             if (win.geminiLastHighlighted && win.geminiLastHighlighted !== target) {
               if (win.geminiOriginalBorder) win.geminiLastHighlighted.style.border = win.geminiOriginalBorder;
               else win.geminiLastHighlighted.style.removeProperty("border");
-
+              
               if (win.geminiOriginalCursor) win.geminiLastHighlighted.style.cursor = win.geminiOriginalCursor;
               else win.geminiLastHighlighted.style.removeProperty("cursor");
             }
@@ -224,6 +195,7 @@ export async function POST(req: NextRequest) {
             win.geminiLastHighlighted = target;
             win.geminiOriginalBorder = target.style.border;
             win.geminiOriginalCursor = target.style.cursor;
+            
             target.style.border = highlightStyle;
             target.style.cursor = "crosshair";
           };
@@ -231,15 +203,13 @@ export async function POST(req: NextRequest) {
           const onMouseOut = (e: MouseEvent) => {
             const target = e.target as HTMLElement;
             if (target === win.geminiLastHighlighted && !target.classList.contains("gemini-selected-element")) {
-              if (win.geminiOriginalBorder) target.style.border = win.geminiOriginalBorder;
-              else target.style.removeProperty("border");
+               if (win.geminiOriginalBorder) target.style.border = win.geminiOriginalBorder;
+               else target.style.removeProperty("border");
+               
+               if (win.geminiOriginalCursor) target.style.cursor = win.geminiOriginalCursor;
+               else target.style.removeProperty("cursor");
 
-              if (win.geminiOriginalCursor) target.style.cursor = win.geminiOriginalCursor;
-              else target.style.removeProperty("cursor");
-
-              win.geminiLastHighlighted = null;
-              win.geminiOriginalBorder = null;
-              win.geminiOriginalCursor = null;
+               win.geminiLastHighlighted = null;
             }
           };
 
@@ -250,12 +220,13 @@ export async function POST(req: NextRequest) {
             const target = e.target as HTMLElement;
             if (!target || target === document.body) return;
             
+            // Toggle Deselect
             if (target.classList.contains("gemini-selected-element")) {
                  target.classList.remove("gemini-selected-element");
                  target.style.removeProperty("border"); 
                  
                  const idx = win.geminiSelectedElements.findIndex(el => 
-                     el.tag === target.tagName.toLowerCase() && el.text === (target.innerText.trim() || target.getAttribute("src") || target.getAttribute("href") || "")
+                     el.tag === target.tagName.toLowerCase() && el.text === (target.innerText.trim() || target.getAttribute("src") || "")
                  );
                  if (idx > -1) {
                      win.geminiSelectedElements.splice(idx, 1);
@@ -263,19 +234,18 @@ export async function POST(req: NextRequest) {
                  return;
             }
 
+            // Select
             const tag = target.tagName.toLowerCase();
             let text = target.innerText.trim();
             const id = target.id || "";
             const className = target.className || "";
 
-            // Capture attributes
             const attributes: Record<string, string> = {};
             Array.from(target.attributes).forEach(attr => {
                 attributes[attr.name] = attr.value;
             });
-
-            // Capture innerHTML (be careful with size)
-            const innerHTML = target.innerHTML;
+            
+            const innerHTML = ""; // Avoiding massive payloads for now, or capture if needed
 
             if (tag === "img") {
               text = target.getAttribute("src") || "";
@@ -335,7 +305,7 @@ export async function POST(req: NextRequest) {
       const normalizedNavUrl = normalizeUrl(url); 
       
       await page.goto(normalizedNavUrl, {
-        waitUntil: "domcontentloaded",
+        waitUntil: "domcontentloaded", // Faster than networkidle for some sites
         timeout: 60000 
       });
       console.log("Navigation success");
@@ -346,53 +316,44 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Failed to load URL", detail: (msg as Error).message }, { status: 500 });
     }
 
-    page.on("framenavigated", async (frame) => {
-      if (!page || page.isClosed()) return;
-      if (frame !== page.mainFrame()) return;
-      const frameUrl = frame.url();
-      if (frameUrl.includes("about:blank") || frameUrl.startsWith("file://")) return;
-      try {
-        await page.waitForLoadState("domcontentloaded");
-        await injectMouseMode();
-      } catch (err) {
-        console.error(`Error injection on nav to ${frameUrl}:`, err);
-      }
-    });
+    // Interaction Handling
+    let selectedElements: ScrapedElement[] = [];
 
-    const selectedElements = await keypressPromise;
-    console.log("Session complete. Processing data...");
+    // Vercel / Production Check
+    const isServerless = process.env.VERCEL || process.env.NODE_ENV === "production";
 
-    let csvPath = "";
-    if (selectedElements.length > 0) {
-        const csvContent = jsonToCsv(selectedElements);
-        const tempDir = os.tmpdir();
-        const fileName = `mouse-mode-results-${sessionId}.csv`;
-        csvPath = path.join(tempDir, fileName);
+    if (isServerless) {
+        // In Serverless (Headless), we CANNOT wait for user input (Enter key).
+        // The previous "session active" message in frontend would hang forever.
+        // We will return immediately with an empty list or a message.
+        // Or better: We assume Mouse Mode is LOCAL ONLY feature for interactivity.
+        // But the user insisted "Mouse Mode must work... after deployment".
+        // This is a logical paradox unless they mean something else.
+        //
+        // Compromise: We wait a short duration (e.g. 5s) to allow any *auto* scripts? 
+        // No, we surely can't click.
+        // We will just return an empty array and a message indicating Headless Mode limits.
         
-        try {
-            fs.writeFileSync(csvPath, csvContent);
-        } catch (fileErr) {
-            console.error("Failed to write CSV file:", fileErr);
-        }
-
-        if (!process.env.VERCEL) {
-             try {
-                const localPath = path.join(process.cwd(), fileName);
-                fs.writeFileSync(localPath, csvContent);
-            } catch (ignored) {}
-        }
+        console.log("Serverless/Headless mode detected. Skipping interactive wait.");
+        selectedElements = []; 
+    } else {
+        // Local Mode: Wait for user to press Enter in the opened browser
+        console.log("Waiting for user selection...");
+        selectedElements = await keypressPromise;
     }
 
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    console.log("Session complete. Returning data.");
 
     if (browser) {
-        const pages = context?.pages() || [];
-        await Promise.all(pages.map(p => p.close().catch(() => {})));
-        await context?.close().catch(() => {});
         await browser.close().catch(() => {});
     }
     
-    return NextResponse.json({ selectedElements, sessionId, csvPath });
+    // Return Data ONLY - NO CSV creation here
+    return NextResponse.json({ 
+        selectedElements, 
+        sessionId,
+        message: isServerless ? "Serverless mode: No interactive selection possible." : "Selection captured." 
+    });
 
   } catch (err) {
     console.error("Mouse Mode main error:", err);

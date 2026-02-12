@@ -1,17 +1,45 @@
 "use client";
 import { useState, useEffect } from "react";
-import { jsonToCsv } from "../../utils/jsonToCsv";
 
-interface SelectedData {
+// Define the structure of the data we receive from the API
+interface ScrapedElement {
   text: string;
   tag: string;
+  id?: string;
+  className?: string;
+  attributes?: Record<string, string>;
+  innerHTML?: string;
 }
+
+// Local CSV generator to ensure we handle the ScrapedElement structure correctly
+// without relying on potentially unsafe backend utils
+const generateCSV = (data: ScrapedElement[]) => {
+  if (!data || data.length === 0) return "";
+  
+  // Headers
+  const headers = ["Tag", "Text", "ID", "Class", "Attributes"];
+  const csvRows = [headers.join(",")];
+
+  // Rows
+  for (const row of data) {
+    const values = [
+      row.tag,
+      `"${(row.text || "").replace(/"/g, '""')}"`, // Escape quotes
+      `"${(row.id || "").replace(/"/g, '""')}"`,
+      `"${(row.className || "").replace(/"/g, '""')}"`,
+      `"${JSON.stringify(row.attributes || {}).replace(/"/g, '""')}"`
+    ];
+    csvRows.push(values.join(","));
+  }
+  
+  return csvRows.join("\n");
+};
 
 export default function MouseModePage() {
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [selectedData, setSelectedData] = useState<SelectedData[]>([]);
+  const [selectedData, setSelectedData] = useState<ScrapedElement[]>([]);
   const [showNotification, setShowNotification] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [sessionActive, setSessionActive] = useState(false);
@@ -37,9 +65,9 @@ export default function MouseModePage() {
     setSessionActive(true); 
     setError("");
     setShowResults(false);
+    setSelectedData([]);
 
     try {
-      // The fetch call is now BLOCKING until the user presses Enter in the browser
       const res = await fetch("/api/mouse-mode", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -52,14 +80,26 @@ export default function MouseModePage() {
       }
 
       const result = await res.json();
-      const elements = result.selectedElements || [];
-      setSelectedData(elements);
+      const rawElements: ScrapedElement[] = result.selectedElements || [];
 
-      if (elements.length > 0) {
+      // Filter duplicates: same tag + same text
+      const uniqueElements = rawElements.filter((item, index, self) =>
+        index === self.findIndex((t) => (
+          t.tag === item.tag && t.text === item.text
+        ))
+      ).filter(item => item.text && item.text.trim().length > 0); // Remove empty text items
+
+      setSelectedData(uniqueElements);
+
+      if (uniqueElements.length > 0) {
         setShowResults(true);
         setShowNotification(true);
       } else {
-        setError("No elements were selected.");
+        if (rawElements.length === 0) {
+             setError("No elements were selected (or session timed out/headless mode).");
+        } else {
+             setError("Selected elements were empty or duplicates.");
+        }
       }
     } catch (err) {
       console.error(err);
@@ -70,31 +110,29 @@ export default function MouseModePage() {
       }
     } finally {
       setLoading(false);
-      setSessionActive(false); // Session over
+      setSessionActive(false);
     }
   };
 
- function downloadCsv() {
-  if (selectedData.length > 0) {
-    const csv = jsonToCsv(
-      selectedData.map((item) => ({
-        tag: item.tag,
-        text: item.text,
-      }))
-    );
+  const downloadCsv = () => {
+    if (selectedData.length === 0) return;
 
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const csvContent = generateCSV(selectedData);
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
+    
     link.setAttribute("href", url);
     link.setAttribute("download", "mouse_mode_data.csv");
     link.style.visibility = "hidden";
+    
     document.body.appendChild(link);
     link.click();
+    
+    // Cleanup
     document.body.removeChild(link);
-  }
-}
-
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-100 to-white text-gray-800 font-sans">
@@ -142,25 +180,41 @@ export default function MouseModePage() {
                 <h2 className="text-3xl font-bold text-gray-800">Selected Data</h2>
                 <button
                   onClick={downloadCsv}
-                  className="bg-green-500 text-white px-6 py-3 rounded-xl hover:bg-green-600 transition-all duration-300 shadow-md hover:shadow-lg"
+                  className="bg-green-500 text-white px-6 py-3 rounded-xl hover:bg-green-600 transition-all duration-300 shadow-md hover:shadow-lg flex items-center gap-2"
                 >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
                   Download CSV
                 </button>
               </div>
-              <ul className="list-disc pl-5 space-y-2 max-h-96 overflow-y-auto">
-                {selectedData.map((item, idx) => (
-                  <li key={idx} className="text-sm text-gray-700 break-words">
-                    <span className="font-semibold text-blue-700">{`<${item.tag}>`}</span>: {item.text}
-                  </li>
-                ))}
-              </ul>
+              <div className="overflow-y-auto max-h-96 pr-2 custom-scrollbar">
+                <ul className="space-y-3">
+                  {selectedData.map((item, idx) => (
+                    <li key={idx} className="bg-white p-3 rounded-lg shadow-sm border border-gray-100 flex items-start gap-3">
+                      <span className="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 uppercase tracking-wide shrink-0">
+                        {item.tag}
+                      </span>
+                      <span className="text-gray-700 text-sm break-all font-medium">
+                        {item.text}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
           )}
         </div>
       </main>
       {showNotification && (
-        <div className="fixed bottom-5 right-5 bg-green-600 text-white px-6 py-4 rounded-xl shadow-2xl animate-fade-in-up z-50">
-           Session Completed! Data has been downloaded to the server and is available below.
+        <div className="fixed bottom-5 right-5 bg-green-600 text-white px-6 py-4 rounded-xl shadow-2xl animate-fade-in-up z-50 flex items-center gap-3">
+           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+           </svg>
+           <div>
+             <p className="font-bold">Success!</p>
+             <p className="text-sm">Data captured successfully.</p>
+           </div>
         </div>
       )}
     </div>
